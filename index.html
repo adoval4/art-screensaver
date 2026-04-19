@@ -181,6 +181,7 @@
         if (work) return work;
         // API miss or all seen -- wait and retry with new random page
         await new Promise(r => setTimeout(r, 2000));
+      }
     }
 
     // ── Show artwork with crossfade ─────────────────────────
