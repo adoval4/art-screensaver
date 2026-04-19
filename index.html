@@ -231,12 +231,45 @@
       infoTimer = setTimeout(() => overlay.classList.remove('visible'), INFO_TIMEOUT);
     }
 
-    // Show info on any interaction (remote click, key press, touch)
+    // Show info on single click/tap/key
     document.addEventListener('keydown', showInfo);
     document.addEventListener('click', showInfo);
     document.addEventListener('touchstart', showInfo);
 
+    // ── Skip to next on double-click/double-tap ─────────────
+    let cycleTimer = null;
+
+    async function skipToNext() {
+      // Cancel pending cycle timer
+      if (cycleTimer) { clearTimeout(cycleTimer); cycleTimer = null; }
+      // Load and show next artwork immediately
+      while (true) {
+        const artwork = await getNextArtwork();
+        const ok = await showArtwork(artwork);
+        if (ok) break;
+      }
+      // Restart the cycle timer
+      scheduleCycle();
+    }
+
+    document.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      skipToNext();
+    });
+
     // ── Main loop ───────────────────────────────────────────
+    function scheduleCycle() {
+      if (cycleTimer) clearTimeout(cycleTimer);
+      cycleTimer = setTimeout(async () => {
+        while (true) {
+          const artwork = await getNextArtwork();
+          const ok = await showArtwork(artwork);
+          if (ok) break;
+        }
+        scheduleCycle();
+      }, INTERVAL_MS);
+    }
+
     async function run() {
       // Show first artwork
       while (true) {
@@ -244,30 +277,8 @@
         const ok = await showArtwork(artwork);
         if (ok) break;
       }
-
-      // Start preloading next + scheduling transitions
-      async function cycle() {
-        const artwork = await getNextArtwork();
-        // Preload 30s before transition
-        const preloadDelay = Math.max(0, INTERVAL_MS - 30000);
-        await new Promise(r => setTimeout(r, preloadDelay));
-
-        const url = imageUrl(artwork.image_id);
-        try { await preloadImage(url); } catch { /* will retry in showArtwork */ }
-
-        await new Promise(r => setTimeout(r, Math.min(30000, INTERVAL_MS)));
-
-        const ok = await showArtwork(artwork);
-        if (!ok) {
-          // If failed, get another immediately
-          const fallback = await getNextArtwork();
-          await showArtwork(fallback);
-        }
-
-        cycle(); // next
-      }
-
-      cycle();
+      // Start cycle
+      scheduleCycle();
     }
 
     // ── Prevent screen sleep (Wake Lock API) ────────────────
