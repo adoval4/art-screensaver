@@ -232,35 +232,53 @@
       infoTimer = setTimeout(() => overlay.classList.remove('visible'), INFO_TIMEOUT);
     }
 
-    // ── Double-click/double-tap detection ────────────────────
-    // Fire TV remote sends 'click' + 'keydown Enter', not 'dblclick'.
-    // Track timing manually: two taps within 500ms = skip.
+    // ── Double-press detection (Fire TV compatible) ──────────
+    // Fire TV remote center button = keyCode 13 (Enter) or 23 (DPAD_CENTER)
+    // May NOT fire 'click' events in WebView -- only keydown.
+    // D-pad arrows: left=37, up=38, right=39, down=40
     let cycleTimer = null;
     let lastTapTime = 0;
     let singleTapTimer = null;
     let nextArtworkReady = null; // preloaded next artwork
 
-    function handleInteraction(e) {
+    function handleTap(e) {
       const now = Date.now();
-      if (now - lastTapTime < 500) {
-        // Double tap -- skip to next
+      if (now - lastTapTime < 600) {
+        // Double press -- skip to next
         clearTimeout(singleTapTimer);
         lastTapTime = 0;
-        e.preventDefault();
         skipToNext();
       } else {
-        // First tap -- wait to see if second comes
+        // First press -- wait to see if second comes
         lastTapTime = now;
         singleTapTimer = setTimeout(() => {
           showInfo();
           lastTapTime = 0;
-        }, 500);
+        }, 600);
       }
     }
 
-    document.addEventListener('keydown', handleInteraction);
-    document.addEventListener('click', handleInteraction);
-    document.addEventListener('touchstart', handleInteraction);
+    // Keydown: filter to select/enter keys for double-tap, show info on others
+    document.addEventListener('keydown', (e) => {
+      const key = e.keyCode || e.which;
+      // Enter (13), DPAD_CENTER (23), Space (32)
+      if (key === 13 || key === 23 || key === 32) {
+        e.preventDefault();
+        handleTap(e);
+      }
+      // Right arrow = skip to next immediately
+      else if (key === 39) {
+        e.preventDefault();
+        skipToNext();
+      }
+      // Any other key = show info
+      else {
+        showInfo();
+      }
+    });
+
+    document.addEventListener('click', handleTap);
+    document.addEventListener('touchstart', handleTap);
     document.addEventListener('dblclick', (e) => e.preventDefault());
 
     // ── Preload next artwork in background ──────────────────
