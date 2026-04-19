@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Art Screensaver</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; cursor: none; }
+
+    .art-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 2.5s ease-in-out;
+      z-index: 1;
+    }
+    .art-layer.active {
+      opacity: 1;
+      z-index: 2;
+    }
+
+    /* Info overlay -- appears on any key/click, fades after 8s */
+    #info-overlay {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      background: linear-gradient(transparent, rgba(0,0,0,0.85));
+      padding: 3rem 2.5rem 2rem;
+      opacity: 0;
+      transition: opacity 0.8s ease;
+      pointer-events: none;
+    }
+    #info-overlay.visible {
+      opacity: 1;
+    }
+
+    /* Loading screen */
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 1s ease;
+    }
+    #loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+    .loading-dot {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading screen -->
+  <div id="loading">
+    <div class="text-center">
+      <div class="flex gap-2 justify-center mb-4">
+        <div class="loading-dot w-2 h-2 bg-white/60 rounded-full" style="animation-delay: 0s"></div>
+        <div class="loading-dot w-2 h-2 bg-white/60 rounded-full" style="animation-delay: 0.3s"></div>
+        <div class="loading-dot w-2 h-2 bg-white/60 rounded-full" style="animation-delay: 0.6s"></div>
+      </div>
+      <p class="text-white/40 text-sm tracking-widest uppercase font-light">Loading artwork</p>
+    </div>
+  </div>
+
+  <!-- Two image layers for crossfade -->
+  <img id="layer-a" class="art-layer" alt="">
+  <img id="layer-b" class="art-layer" alt="">
+
+  <!-- Info overlay -->
+  <div id="info-overlay">
+    <p id="info-title" class="text-white text-2xl font-light tracking-wide"></p>
+    <p id="info-artist" class="text-white/70 text-lg font-light mt-1"></p>
+    <p id="info-date" class="text-white/50 text-sm font-light mt-1"></p>
+  </div>
+
+  <script>
+    // ── Config ──────────────────────────────────────────────
+    const params = new URLSearchParams(window.location.search);
+    const INTERVAL_MIN  = parseInt(params.get('interval') || '20', 10);
+    const INTERVAL_MS   = INTERVAL_MIN * 60 * 1000;
+    const SCREEN_W      = window.screen.width  || 1920;
+    const SCREEN_H      = window.screen.height || 1080;
+    const IIIF_W        = Math.max(SCREEN_W, 1920);
+    const API_BASE      = 'https://api.artic.edu/api/v1';
+    const IIIF_BASE     = 'https://www.artic.edu/iiif/2';
+    const BATCH_SIZE    = 10;
+    const MAX_PAGES     = 13000;
+    const INFO_TIMEOUT  = 8000;
+
+    // ── State ───────────────────────────────────────────────
+    let currentLayer = 'a';
+    let currentArtwork = null;
+    let queue = [];
+    let infoTimer = null;
+
+    // ── No-repeat: localStorage keyed by date ───────────────
+    function getTodayKey() {
+      return 'art-seen-' + new Date().toISOString().slice(0, 10);
+    }
+
+    function getSeenIds() {
+      try {
+        return new Set(JSON.parse(localStorage.getItem(getTodayKey()) || '[]'));
+      } catch { return new Set(); }
+    }
+
+    function markSeen(id) {
+      const seen = getSeenIds();
+      seen.add(id);
+      localStorage.setItem(getTodayKey(), JSON.stringify([...seen]));
+      // Clean old days
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('art-seen-') && key !== getTodayKey()) {
+          localStorage.removeItem(key);
+        }
+      }
+    }
+
+    // ── Fetch a batch of artworks from AIC ──────────────────
+    async function fetchBatch() {
+      const seen = getSeenIds();
+      const page = Math.floor(Math.random() * MAX_PAGES) + 1;
+
+      try {
+        const res = await fetch(
+          `${API_BASE}/artworks?page=${page}&limit=${BATCH_SIZE}&fields=id,title,artist_title,date_display,image_id,is_public_domain,classification_title`
+        );
+        const data = await res.json();
+        const works = (data.data || []).filter(w =>
+          w.image_id &&
+          w.is_public_domain &&
+          !seen.has(w.id)
+        );
+        return works;
+      } catch (err) {
+        console.error('API fetch error:', err);
+        return [];
+      }
+    }
+
+    // ── Build IIIF URL ──────────────────────────────────────
+    function imageUrl(imageId) {
+      return `${IIIF_BASE}/${imageId}/full/${IIIF_W},/0/default.jpg`;
+    }
+
+    // ── Preload an image ────────────────────────────────────
+    function preloadImage(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(url);
+        img.onerror = () => reject(new Error('Failed to load: ' + url));
+        img.src = url;
+      });
+    }
+
+    // ── Get next artwork (refill queue if needed) ───────────
+    async function getNextArtwork() {
+      while (queue.length === 0) {
+        queue = await fetchBatch();
+        if (queue.length === 0) {
+          // All seen or API issue -- wait and retry
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+      return queue.shift();
+    }
+
+    // ── Show artwork with crossfade ─────────────────────────
+    async function showArtwork(artwork) {
+      const url = imageUrl(artwork.image_id);
+
+      try {
+        await preloadImage(url);
+      } catch {
+        // Skip broken images
+        return false;
+      }
+
+      const nextLayer = currentLayer === 'a' ? 'b' : 'a';
+      const nextEl = document.getElementById(`layer-${nextLayer}`);
+      const prevEl = document.getElementById(`layer-${currentLayer}`);
+
+      nextEl.src = url;
+      nextEl.alt = artwork.title || '';
+
+      // Crossfade
+      nextEl.classList.add('active');
+      prevEl.classList.remove('active');
+
+      currentLayer = nextLayer;
+      currentArtwork = artwork;
+      markSeen(artwork.id);
+
+      // Hide loading on first image
+      const loading = document.getElementById('loading');
+      if (!loading.classList.contains('hidden')) {
+        loading.classList.add('hidden');
+      }
+
+      return true;
+    }
+
+    // ── Info overlay ────────────────────────────────────────
+    function showInfo() {
+      if (!currentArtwork) return;
+      const overlay = document.getElementById('info-overlay');
+      document.getElementById('info-title').textContent = currentArtwork.title || 'Untitled';
+      document.getElementById('info-artist').textContent = currentArtwork.artist_title || 'Unknown artist';
+      document.getElementById('info-date').textContent = currentArtwork.date_display || '';
+
+      overlay.classList.add('visible');
+      clearTimeout(infoTimer);
+      infoTimer = setTimeout(() => overlay.classList.remove('visible'), INFO_TIMEOUT);
+    }
+
+    // Show info on any interaction (remote click, key press, touch)
+    document.addEventListener('keydown', showInfo);
+    document.addEventListener('click', showInfo);
+    document.addEventListener('touchstart', showInfo);
+
+    // ── Main loop ───────────────────────────────────────────
+    async function run() {
+      // Show first artwork
+      while (true) {
+        const artwork = await getNextArtwork();
+        const ok = await showArtwork(artwork);
+        if (ok) break;
+      }
+
+      // Start preloading next + scheduling transitions
+      async function cycle() {
+        const artwork = await getNextArtwork();
+        // Preload 30s before transition
+        const preloadDelay = Math.max(0, INTERVAL_MS - 30000);
+        await new Promise(r => setTimeout(r, preloadDelay));
+
+        const url = imageUrl(artwork.image_id);
+        try { await preloadImage(url); } catch { /* will retry in showArtwork */ }
+
+        await new Promise(r => setTimeout(r, Math.min(30000, INTERVAL_MS)));
+
+        const ok = await showArtwork(artwork);
+        if (!ok) {
+          // If failed, get another immediately
+          const fallback = await getNextArtwork();
+          await showArtwork(fallback);
+        }
+
+        cycle(); // next
+      }
+
+      cycle();
+    }
+
+    // ── Prevent screen sleep (Wake Lock API) ────────────────
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          await navigator.wakeLock.request('screen');
+        }
+      } catch { /* not supported or denied */ }
+    }
+
+    // ── Go fullscreen on first interaction ──────────────────
+    function goFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+      requestWakeLock();
+      // Remove listener after first trigger
+      document.removeEventListener('click', goFullscreen);
+      document.removeEventListener('keydown', goFullscreen);
+    }
+    document.addEventListener('click', goFullscreen);
+    document.addEventListener('keydown', goFullscreen);
+
+    // ── Start ───────────────────────────────────────────────
+    requestWakeLock();
+    run();
+  </script>
+</body>
+</html>
