@@ -107,7 +107,6 @@
     // ── State ───────────────────────────────────────────────
     let currentLayer = 'a';
     let currentArtwork = null;
-    let queue = [];
     let infoTimer = null;
 
     // ── No-repeat: localStorage keyed by date ───────────────
@@ -134,14 +133,16 @@
       }
     }
 
-    // ── Fetch a batch of artworks from AIC ──────────────────
-    async function fetchBatch() {
+    // ── Fetch a single random artwork from AIC ───────────────
+    // Each call hits a different random page and picks one random item.
+    // This ensures consecutive pieces are never from the same batch.
+    async function fetchOne() {
       const seen = getSeenIds();
       const page = Math.floor(Math.random() * MAX_PAGES) + 1;
 
       try {
         const res = await fetch(
-          `${API_BASE}/artworks?page=${page}&limit=${BATCH_SIZE}&fields=id,title,artist_title,date_display,image_id,is_public_domain,classification_title`
+          `${API_BASE}/artworks?page=${page}&limit=${BATCH_SIZE}&fields=id,title,artist_title,date_display,image_id,is_public_domain`
         );
         const data = await res.json();
         const works = (data.data || []).filter(w =>
@@ -149,10 +150,12 @@
           w.is_public_domain &&
           !seen.has(w.id)
         );
-        return works;
+        if (works.length === 0) return null;
+        // Pick one random item from the batch
+        return works[Math.floor(Math.random() * works.length)];
       } catch (err) {
         console.error('API fetch error:', err);
-        return [];
+        return null;
       }
     }
 
@@ -171,16 +174,13 @@
       });
     }
 
-    // ── Get next artwork (refill queue if needed) ───────────
+    // ── Get next artwork (each call = fresh random page) ─────
     async function getNextArtwork() {
-      while (queue.length === 0) {
-        queue = await fetchBatch();
-        if (queue.length === 0) {
-          // All seen or API issue -- wait and retry
-          await new Promise(r => setTimeout(r, 3000));
-        }
-      }
-      return queue.shift();
+      while (true) {
+        const work = await fetchOne();
+        if (work) return work;
+        // API miss or all seen -- wait and retry with new random page
+        await new Promise(r => setTimeout(r, 2000));
     }
 
     // ── Show artwork with crossfade ─────────────────────────
