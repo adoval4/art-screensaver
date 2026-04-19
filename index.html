@@ -232,42 +232,77 @@
       infoTimer = setTimeout(() => overlay.classList.remove('visible'), INFO_TIMEOUT);
     }
 
-    // Show info on single click/tap/key
-    document.addEventListener('keydown', showInfo);
-    document.addEventListener('click', showInfo);
-    document.addEventListener('touchstart', showInfo);
-
-    // ── Skip to next on double-click/double-tap ─────────────
+    // ── Double-click/double-tap detection ────────────────────
+    // Fire TV remote sends 'click' + 'keydown Enter', not 'dblclick'.
+    // Track timing manually: two taps within 500ms = skip.
     let cycleTimer = null;
+    let lastTapTime = 0;
+    let singleTapTimer = null;
+    let nextArtworkReady = null; // preloaded next artwork
 
-    async function skipToNext() {
-      // Cancel pending cycle timer
-      if (cycleTimer) { clearTimeout(cycleTimer); cycleTimer = null; }
-      // Load and show next artwork immediately
-      while (true) {
-        const artwork = await getNextArtwork();
-        const ok = await showArtwork(artwork);
-        if (ok) break;
+    function handleInteraction(e) {
+      const now = Date.now();
+      if (now - lastTapTime < 500) {
+        // Double tap -- skip to next
+        clearTimeout(singleTapTimer);
+        lastTapTime = 0;
+        e.preventDefault();
+        skipToNext();
+      } else {
+        // First tap -- wait to see if second comes
+        lastTapTime = now;
+        singleTapTimer = setTimeout(() => {
+          showInfo();
+          lastTapTime = 0;
+        }, 500);
       }
-      // Restart the cycle timer
-      scheduleCycle();
     }
 
-    document.addEventListener('dblclick', (e) => {
-      e.preventDefault();
-      skipToNext();
-    });
+    document.addEventListener('keydown', handleInteraction);
+    document.addEventListener('click', handleInteraction);
+    document.addEventListener('touchstart', handleInteraction);
+    document.addEventListener('dblclick', (e) => e.preventDefault());
+
+    // ── Preload next artwork in background ──────────────────
+    async function preloadNext() {
+      while (true) {
+        const artwork = await getNextArtwork();
+        const url = imageUrl(artwork.image_id);
+        try {
+          await preloadImage(url);
+          nextArtworkReady = artwork;
+          return;
+        } catch {
+          // Image failed to load, try another
+          continue;
+        }
+      }
+    }
+
+    async function skipToNext() {
+      if (cycleTimer) { clearTimeout(cycleTimer); cycleTimer = null; }
+      // Use preloaded artwork if available, otherwise fetch fresh
+      let artwork = nextArtworkReady;
+      nextArtworkReady = null;
+      if (artwork) {
+        await showArtwork(artwork);
+      } else {
+        while (true) {
+          artwork = await getNextArtwork();
+          const ok = await showArtwork(artwork);
+          if (ok) break;
+        }
+      }
+      // Start preloading next immediately
+      preloadNext();
+      scheduleCycle();
+    }
 
     // ── Main loop ───────────────────────────────────────────
     function scheduleCycle() {
       if (cycleTimer) clearTimeout(cycleTimer);
       cycleTimer = setTimeout(async () => {
-        while (true) {
-          const artwork = await getNextArtwork();
-          const ok = await showArtwork(artwork);
-          if (ok) break;
-        }
-        scheduleCycle();
+        await skipToNext();
       }, INTERVAL_MS);
     }
 
@@ -278,6 +313,8 @@
         const ok = await showArtwork(artwork);
         if (ok) break;
       }
+      // Preload next immediately
+      preloadNext();
       // Start cycle
       scheduleCycle();
     }
