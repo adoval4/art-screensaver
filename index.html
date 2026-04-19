@@ -100,9 +100,30 @@
     const IIIF_W        = Math.max(SCREEN_W, 1920);
     const API_BASE      = 'https://api.artic.edu/api/v1';
     const IIIF_BASE     = 'https://www.artic.edu/iiif/2';
-    const BATCH_SIZE    = 10;
-    const MAX_PAGES     = 13000;
+    const BATCH_SIZE    = 100;
+    const MIN_RATIO     = 0.75;  // reject extreme portraits
     const INFO_TIMEOUT  = 8000;
+
+    // Curated search terms that return quality paintings
+    const SEARCH_TERMS = [
+      'impressionist oil painting',
+      'post impressionist painting',
+      'landscape oil canvas',
+      'monet',
+      'van gogh',
+      'cezanne',
+      'kandinsky',
+      'mondrian',
+      'sargent',
+      'renoir',
+      'seurat',
+      'degas',
+      'matisse painting',
+      'abstract painting',
+      'modern oil canvas',
+      'still life painting oil',
+      'expressionist painting',
+    ];
 
     // ── State ───────────────────────────────────────────────
     let currentLayer = 'a';
@@ -134,24 +155,30 @@
     }
 
     // ── Fetch a single random artwork from AIC ───────────────
-    // Each call hits a different random page and picks one random item.
-    // This ensures consecutive pieces are never from the same batch.
     async function fetchOne() {
       const seen = getSeenIds();
-      const page = Math.floor(Math.random() * MAX_PAGES) + 1;
+      // Pick a random search term and random page (1-10, safe range for search)
+      const term = SEARCH_TERMS[Math.floor(Math.random() * SEARCH_TERMS.length)];
+      const page = Math.floor(Math.random() * 10) + 1;
 
       try {
+        const q = encodeURIComponent(term);
         const res = await fetch(
-          `${API_BASE}/artworks?page=${page}&limit=${BATCH_SIZE}&fields=id,title,artist_title,date_display,image_id,is_public_domain`
+          `${API_BASE}/artworks/search?q=${q}&page=${page}&limit=${BATCH_SIZE}&fields=id,title,artist_title,date_display,image_id,is_public_domain,artwork_type_title,thumbnail`
         );
         const data = await res.json();
-        const works = (data.data || []).filter(w =>
-          w.image_id &&
-          w.is_public_domain &&
-          !seen.has(w.id)
-        );
+        const works = (data.data || []).filter(w => {
+          if (!w.image_id || !w.is_public_domain || seen.has(w.id)) return false;
+          // Only paintings
+          if (w.artwork_type_title !== 'Painting') return false;
+          // Aspect ratio filter -- reject extreme portraits
+          const t = w.thumbnail || {};
+          const tw = t.width || 0;
+          const th = t.height || 1;
+          if (th && tw / th < MIN_RATIO) return false;
+          return true;
+        });
         if (works.length === 0) return null;
-        // Pick one random item from the batch
         return works[Math.floor(Math.random() * works.length)];
       } catch (err) {
         console.error('API fetch error:', err);
