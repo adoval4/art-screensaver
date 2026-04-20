@@ -39,6 +39,7 @@
     }
     #info-overlay.visible {
       opacity: 1;
+      pointer-events: auto;
     }
 
     /* Loading screen */
@@ -64,6 +65,156 @@
     .loading-dot {
       animation: pulse 1.5s ease-in-out infinite;
     }
+
+    /* Heart animation on favorite */
+    @keyframes heartBurst {
+      0% { transform: scale(0); opacity: 0; }
+      15% { transform: scale(1.3); opacity: 1; }
+      30% { transform: scale(0.95); opacity: 1; }
+      45% { transform: scale(1.05); opacity: 1; }
+      70% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(1); opacity: 0; }
+    }
+    #heart-burst {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      z-index: 15;
+      pointer-events: none;
+      opacity: 0;
+      font-size: 120px;
+      filter: drop-shadow(0 0 30px rgba(239, 68, 68, 0.6));
+    }
+    #heart-burst.animate {
+      animation: heartBurst 1.8s ease-out forwards;
+    }
+
+    /* Unfavorite animation */
+    @keyframes heartBreak {
+      0% { transform: scale(1); opacity: 1; }
+      30% { transform: scale(1.1); opacity: 1; }
+      100% { transform: scale(0); opacity: 0; }
+    }
+    #heart-burst.animate-remove {
+      animation: heartBreak 0.8s ease-in forwards;
+    }
+
+    /* Favorites drawer */
+    #favorites-drawer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 25;
+      background: rgba(0, 0, 0, 0.95);
+      backdrop-filter: blur(20px);
+      transform: translateY(100%);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      max-height: 70vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #favorites-drawer.open {
+      transform: translateY(0);
+    }
+
+    .fav-card {
+      flex-shrink: 0;
+      width: 220px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: all 0.2s ease;
+      border: 2px solid transparent;
+      cursor: pointer;
+    }
+    .fav-card.focused {
+      border-color: rgba(255, 255, 255, 0.8);
+      background: rgba(255, 255, 255, 0.15);
+      transform: scale(1.05);
+    }
+    .fav-card img {
+      width: 100%;
+      height: 140px;
+      object-fit: cover;
+    }
+    .fav-card-info {
+      padding: 10px 12px;
+    }
+    .fav-card-title {
+      color: white;
+      font-size: 13px;
+      font-weight: 400;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .fav-card-artist {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+      font-weight: 300;
+      margin-top: 3px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Info bar buttons */
+    .info-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 13px;
+      font-weight: 300;
+      letter-spacing: 0.5px;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    .info-btn.focused {
+      background: rgba(255, 255, 255, 0.25);
+      color: white;
+      border-color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* Long press progress ring */
+    #long-press-ring {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 14;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    #long-press-ring.active {
+      opacity: 1;
+    }
+    #long-press-ring circle.progress {
+      stroke-dasharray: 283;
+      stroke-dashoffset: 283;
+      transition: stroke-dashoffset 0.8s linear;
+    }
+    #long-press-ring.filling circle.progress {
+      stroke-dashoffset: 0;
+    }
+
+    /* Empty state in drawer */
+    .empty-state {
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 15px;
+      font-weight: 300;
+      text-align: center;
+      padding: 3rem;
+      letter-spacing: 0.5px;
+    }
   </style>
 </head>
 <body>
@@ -83,11 +234,44 @@
   <img id="layer-a" class="art-layer" alt="">
   <img id="layer-b" class="art-layer" alt="">
 
+  <!-- Heart burst animation -->
+  <div id="heart-burst"></div>
+
+  <!-- Long press progress ring -->
+  <svg id="long-press-ring" width="100" height="100" viewBox="0 0 100 100">
+    <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="3"/>
+    <circle class="progress" cx="50" cy="50" r="45" fill="none" stroke="rgba(239,68,68,0.8)" stroke-width="3"
+            stroke-linecap="round" transform="rotate(-90 50 50)"/>
+    <text x="50" y="55" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="28"></text>
+  </svg>
+
   <!-- Info overlay -->
   <div id="info-overlay">
-    <p id="info-title" class="text-white text-2xl font-light tracking-wide"></p>
-    <p id="info-artist" class="text-white/70 text-lg font-light mt-1"></p>
-    <p id="info-date" class="text-white/50 text-sm font-light mt-1"></p>
+    <div class="flex items-end justify-between">
+      <div>
+        <p id="info-title" class="text-white text-2xl font-light tracking-wide"></p>
+        <p id="info-artist" class="text-white/70 text-lg font-light mt-1"></p>
+        <p id="info-date" class="text-white/50 text-sm font-light mt-1"></p>
+      </div>
+      <div class="flex gap-3 mb-1">
+        <button id="btn-fav" class="info-btn" data-btn-index="0">
+          <span id="btn-fav-icon"></span>
+          <span id="btn-fav-label"></span>
+        </button>
+        <button id="btn-drawer" class="info-btn" data-btn-index="1">
+          <span>Favorites</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Favorites drawer -->
+  <div id="favorites-drawer">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-white/10">
+      <h2 class="text-white/80 text-lg font-light tracking-wide">Favorites</h2>
+      <span id="fav-count" class="text-white/40 text-sm font-light"></span>
+    </div>
+    <div id="fav-cards" class="flex gap-4 px-6 py-5 overflow-x-auto" style="scrollbar-width: none;"></div>
   </div>
 
   <script>
@@ -103,6 +287,7 @@
     const BATCH_SIZE    = 100;
     const MIN_RATIO     = 0.75;  // reject extreme portraits
     const INFO_TIMEOUT  = 8000;
+    const LONG_PRESS_MS = 800;
 
     // Curated search terms that return quality paintings
     const SEARCH_TERMS = [
@@ -129,6 +314,9 @@
     let currentLayer = 'a';
     let currentArtwork = null;
     let infoTimer = null;
+    let uiMode = 'screensaver'; // 'screensaver' | 'info' | 'drawer'
+    let focusedBtnIndex = -1;   // which info-bar button has focus
+    let focusedCardIndex = 0;   // which card in drawer has focus
 
     // ── No-repeat: localStorage keyed by date ───────────────
     function getTodayKey() {
@@ -145,7 +333,6 @@
       const seen = getSeenIds();
       seen.add(id);
       localStorage.setItem(getTodayKey(), JSON.stringify([...seen]));
-      // Clean old days
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith('art-seen-') && key !== getTodayKey()) {
@@ -154,10 +341,65 @@
       }
     }
 
+    // ── Favorites: localStorage ─────────────────────────────
+    function getFavorites() {
+      try {
+        return JSON.parse(localStorage.getItem('art-favorites') || '[]');
+      } catch { return []; }
+    }
+
+    function saveFavorites(favs) {
+      localStorage.setItem('art-favorites', JSON.stringify(favs));
+    }
+
+    function isFavorited(artworkId) {
+      return getFavorites().some(f => f.id === artworkId);
+    }
+
+    function addFavorite(artwork) {
+      const favs = getFavorites();
+      if (favs.some(f => f.id === artwork.id)) return;
+      favs.unshift({
+        id: artwork.id,
+        title: artwork.title || 'Untitled',
+        artist: artwork.artist_title || 'Unknown artist',
+        date: artwork.date_display || '',
+        image_id: artwork.image_id,
+        image_url: imageUrl(artwork.image_id),
+        thumb_url: `${IIIF_BASE}/${artwork.image_id}/full/440,/0/default.jpg`,
+        added_at: Date.now(),
+      });
+      saveFavorites(favs);
+    }
+
+    function removeFavorite(artworkId) {
+      const favs = getFavorites().filter(f => f.id !== artworkId);
+      saveFavorites(favs);
+    }
+
+    function toggleFavorite() {
+      if (!currentArtwork) { console.log('[fav] no current artwork'); return; }
+      const wasFav = isFavorited(currentArtwork.id);
+      console.log('[fav] toggleFavorite --', wasFav ? 'REMOVING' : 'ADDING', currentArtwork.title);
+      const heart = document.getElementById('heart-burst');
+      heart.classList.remove('animate', 'animate-remove');
+      void heart.offsetWidth; // force reflow
+
+      if (isFavorited(currentArtwork.id)) {
+        removeFavorite(currentArtwork.id);
+        heart.textContent = '\u{1F494}';
+        heart.classList.add('animate-remove');
+      } else {
+        addFavorite(currentArtwork);
+        heart.textContent = '\u{2764}\u{FE0F}';
+        heart.classList.add('animate');
+      }
+      updateFavButton();
+    }
+
     // ── Fetch a single random artwork from AIC ───────────────
     async function fetchOne() {
       const seen = getSeenIds();
-      // Pick a random search term and random page (1-10, safe range for search)
       const term = SEARCH_TERMS[Math.floor(Math.random() * SEARCH_TERMS.length)];
       const page = Math.floor(Math.random() * 10) + 1;
 
@@ -168,10 +410,8 @@
         );
         const data = await res.json();
         const works = (data.data || []).filter(w => {
-          if (!w.image_id || !w.is_public_domain || seen.has(w.id)) return false;
-          // Only paintings
+          if (!w.image_id || seen.has(w.id)) return false;
           if (w.artwork_type_title !== 'Painting') return false;
-          // Aspect ratio filter -- reject extreme portraits
           const t = w.thumbnail || {};
           const tw = t.width || 0;
           const th = t.height || 1;
@@ -206,7 +446,6 @@
       while (true) {
         const work = await fetchOne();
         if (work) return work;
-        // API miss or all seen -- wait and retry with new random page
         await new Promise(r => setTimeout(r, 2000));
       }
     }
@@ -218,7 +457,6 @@
       try {
         await preloadImage(url);
       } catch {
-        // Skip broken images
         return false;
       }
 
@@ -229,7 +467,6 @@
       nextEl.src = url;
       nextEl.alt = artwork.title || '';
 
-      // Crossfade
       nextEl.classList.add('active');
       prevEl.classList.remove('active');
 
@@ -237,75 +474,350 @@
       currentArtwork = artwork;
       markSeen(artwork.id);
 
-      // Hide loading on first image
       const loading = document.getElementById('loading');
       if (!loading.classList.contains('hidden')) {
         loading.classList.add('hidden');
       }
 
+      updateFavButton();
       return true;
     }
 
     // ── Info overlay ────────────────────────────────────────
+    function updateFavButton() {
+      const icon = document.getElementById('btn-fav-icon');
+      const label = document.getElementById('btn-fav-label');
+      if (currentArtwork && isFavorited(currentArtwork.id)) {
+        icon.textContent = '\u{2764}\u{FE0F}';
+        label.textContent = 'Favorited';
+      } else {
+        icon.textContent = '\u{2661}';
+        label.textContent = 'Favorite';
+      }
+    }
+
     function showInfo() {
       if (!currentArtwork) return;
       const overlay = document.getElementById('info-overlay');
       document.getElementById('info-title').textContent = currentArtwork.title || 'Untitled';
       document.getElementById('info-artist').textContent = currentArtwork.artist_title || 'Unknown artist';
       document.getElementById('info-date').textContent = currentArtwork.date_display || '';
+      updateFavButton();
 
       overlay.classList.add('visible');
+      uiMode = 'info';
+      focusedBtnIndex = -1;
+      updateButtonFocus();
+
       clearTimeout(infoTimer);
-      infoTimer = setTimeout(() => overlay.classList.remove('visible'), INFO_TIMEOUT);
+      infoTimer = setTimeout(() => {
+        if (uiMode === 'info') {
+          overlay.classList.remove('visible');
+          uiMode = 'screensaver';
+          focusedBtnIndex = -1;
+          updateButtonFocus();
+        }
+      }, INFO_TIMEOUT);
     }
 
-    // ── Double-press detection (Fire TV compatible) ──────────
+    function hideInfo() {
+      document.getElementById('info-overlay').classList.remove('visible');
+      uiMode = 'screensaver';
+      focusedBtnIndex = -1;
+      updateButtonFocus();
+      clearTimeout(infoTimer);
+    }
+
+    function updateButtonFocus() {
+      document.querySelectorAll('.info-btn').forEach((btn, i) => {
+        btn.classList.toggle('focused', i === focusedBtnIndex);
+      });
+    }
+
+    // ── Favorites drawer ────────────────────────────────────
+    function openDrawer() {
+      hideInfo();
+      const drawer = document.getElementById('favorites-drawer');
+      const container = document.getElementById('fav-cards');
+      const favs = getFavorites();
+
+      document.getElementById('fav-count').textContent = favs.length + (favs.length === 1 ? ' piece' : ' pieces');
+
+      container.innerHTML = '';
+      if (favs.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="width:100%">No favorites yet. Long-press on any artwork to save it.</div>';
+      } else {
+        favs.forEach((fav, i) => {
+          const card = document.createElement('div');
+          card.className = 'fav-card' + (i === 0 ? ' focused' : '');
+          card.dataset.index = i;
+          card.innerHTML = `
+            <img src="${fav.thumb_url}" alt="${fav.title}" loading="lazy">
+            <div class="fav-card-info">
+              <div class="fav-card-title">${fav.title}</div>
+              <div class="fav-card-artist">${fav.artist}</div>
+            </div>
+          `;
+          container.appendChild(card);
+        });
+      }
+
+      focusedCardIndex = 0;
+      drawer.classList.add('open');
+      uiMode = 'drawer';
+    }
+
+    function closeDrawer() {
+      document.getElementById('favorites-drawer').classList.remove('open');
+      uiMode = 'screensaver';
+    }
+
+    function updateCardFocus() {
+      document.querySelectorAll('.fav-card').forEach((card, i) => {
+        card.classList.toggle('focused', i === focusedCardIndex);
+        if (i === focusedCardIndex) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+      });
+    }
+
+    async function selectFavoriteCard() {
+      const favs = getFavorites();
+      if (focusedCardIndex < 0 || focusedCardIndex >= favs.length) return;
+      const fav = favs[focusedCardIndex];
+      closeDrawer();
+
+      // Build a minimal artwork object to display it
+      const artwork = {
+        id: fav.id,
+        title: fav.title,
+        artist_title: fav.artist,
+        date_display: fav.date,
+        image_id: fav.image_id,
+      };
+      await showArtwork(artwork);
+      scheduleCycle();
+    }
+
+    // ── Long press detection ────────────────────────────────
+    let longPressTimer = null;
+    let isLongPress = false;
+
+    function startLongPress() {
+      console.log('[long-press] START -- timer set for', LONG_PRESS_MS, 'ms');
+      isLongPress = false;
+      const ring = document.getElementById('long-press-ring');
+      const heartIcon = ring.querySelector('text');
+      heartIcon.textContent = '\u{2661}';
+      ring.classList.add('active');
+
+      // Small delay before starting fill animation so it feels intentional
+      setTimeout(() => {
+        if (longPressTimer) ring.classList.add('filling');
+      }, 50);
+
+      longPressTimer = setTimeout(() => {
+        isLongPress = true;
+        console.log('[long-press] COMPLETED -- toggling favorite');
+        ring.classList.remove('active', 'filling');
+        // Reset the progress stroke for next time
+        const progress = ring.querySelector('circle.progress');
+        progress.style.transition = 'none';
+        progress.style.strokeDashoffset = '283';
+        void progress.offsetWidth;
+        progress.style.transition = '';
+
+        toggleFavorite();
+        longPressTimer = null;
+      }, LONG_PRESS_MS);
+    }
+
+    function cancelLongPress() {
+      if (longPressTimer) {
+        console.log('[long-press] CANCELLED -- released too early');
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      const ring = document.getElementById('long-press-ring');
+      ring.classList.remove('active', 'filling');
+      // Reset progress stroke
+      const progress = ring.querySelector('circle.progress');
+      progress.style.transition = 'none';
+      progress.style.strokeDashoffset = '283';
+      void progress.offsetWidth;
+      progress.style.transition = '';
+    }
+
+    // ── Input handling ──────────────────────────────────────
     // Fire TV remote center button = keyCode 13 (Enter) or 23 (DPAD_CENTER)
-    // May NOT fire 'click' events in WebView -- only keydown.
     // D-pad arrows: left=37, up=38, right=39, down=40
     let cycleTimer = null;
     let lastTapTime = 0;
     let singleTapTimer = null;
-    let nextArtworkReady = null; // preloaded next artwork
+    let nextArtworkReady = null;
 
     function handleTap(e) {
+      console.log('[tap] handleTap called, isLongPress:', isLongPress, 'uiMode:', uiMode);
+      if (isLongPress) {
+        console.log('[tap] skipping -- was long press');
+        isLongPress = false;
+        return;
+      }
       const now = Date.now();
       if (now - lastTapTime < 600) {
-        // Double press -- skip to next
+        console.log('[tap] DOUBLE tap detected -- skipping to next');
         clearTimeout(singleTapTimer);
         lastTapTime = 0;
-        skipToNext();
+        if (uiMode === 'screensaver') skipToNext();
       } else {
-        // First press -- wait to see if second comes
         lastTapTime = now;
         singleTapTimer = setTimeout(() => {
-          showInfo();
           lastTapTime = 0;
+          if (uiMode === 'screensaver') {
+            showInfo();
+          } else if (uiMode === 'info') {
+            if (focusedBtnIndex === 0) {
+              toggleFavorite();
+              clearTimeout(infoTimer);
+              infoTimer = setTimeout(() => {
+                if (uiMode === 'info') {
+                  document.getElementById('info-overlay').classList.remove('visible');
+                  uiMode = 'screensaver';
+                }
+              }, INFO_TIMEOUT);
+            } else if (focusedBtnIndex === 1) {
+              openDrawer();
+            } else {
+              hideInfo();
+            }
+          } else if (uiMode === 'drawer') {
+            selectFavoriteCard();
+          }
         }, 600);
       }
     }
 
-    // Keydown: filter to select/enter keys for double-tap, show info on others
     document.addEventListener('keydown', (e) => {
       const key = e.keyCode || e.which;
+
       // Enter (13), DPAD_CENTER (23), Space (32)
       if (key === 13 || key === 23 || key === 32) {
         e.preventDefault();
-        handleTap(e);
+        startLongPress();
+        return;
       }
-      // Right arrow = skip to next immediately
-      else if (key === 39) {
-        e.preventDefault();
-        skipToNext();
-      }
-      // Any other key = show info
-      else {
-        showInfo();
+
+      if (uiMode === 'screensaver') {
+        if (key === 39) { // right arrow
+          e.preventDefault();
+          skipToNext();
+        } else if (key === 38) { // up arrow -- show info
+          e.preventDefault();
+          showInfo();
+        } else {
+          showInfo();
+        }
+      } else if (uiMode === 'info') {
+        clearTimeout(infoTimer);
+        if (key === 37) { // left
+          e.preventDefault();
+          if (focusedBtnIndex > 0) focusedBtnIndex--;
+          else focusedBtnIndex = 0;
+          updateButtonFocus();
+        } else if (key === 39) { // right
+          e.preventDefault();
+          if (focusedBtnIndex < 1) focusedBtnIndex++;
+          updateButtonFocus();
+        } else if (key === 40) { // down -- open drawer directly
+          e.preventDefault();
+          openDrawer();
+        } else if (key === 38) { // up -- hide info
+          e.preventDefault();
+          hideInfo();
+        } else if (key === 27 || key === 4) { // Escape or Back
+          e.preventDefault();
+          hideInfo();
+        }
+        // Reset info timeout on any key
+        if (uiMode === 'info') {
+          infoTimer = setTimeout(() => {
+            if (uiMode === 'info') {
+              document.getElementById('info-overlay').classList.remove('visible');
+              uiMode = 'screensaver';
+              focusedBtnIndex = -1;
+              updateButtonFocus();
+            }
+          }, INFO_TIMEOUT);
+        }
+      } else if (uiMode === 'drawer') {
+        const favs = getFavorites();
+        if (key === 37) { // left
+          e.preventDefault();
+          if (focusedCardIndex > 0) {
+            focusedCardIndex--;
+            updateCardFocus();
+          }
+        } else if (key === 39) { // right
+          e.preventDefault();
+          if (focusedCardIndex < favs.length - 1) {
+            focusedCardIndex++;
+            updateCardFocus();
+          }
+        } else if (key === 38 || key === 27 || key === 4) { // up, Escape, Back
+          e.preventDefault();
+          closeDrawer();
+        } else if (key === 40) { // down -- remove from favorites
+          e.preventDefault();
+          if (favs.length > 0) {
+            const fav = favs[focusedCardIndex];
+            removeFavorite(fav.id);
+            if (currentArtwork && currentArtwork.id === fav.id) updateFavButton();
+            // Re-render drawer
+            if (getFavorites().length === 0) {
+              closeDrawer();
+            } else {
+              focusedCardIndex = Math.min(focusedCardIndex, getFavorites().length - 1);
+              openDrawer();
+              focusedCardIndex = Math.min(focusedCardIndex, getFavorites().length - 1);
+              updateCardFocus();
+            }
+          }
+        }
       }
     });
 
-    document.addEventListener('click', handleTap);
-    document.addEventListener('touchstart', handleTap);
+    document.addEventListener('keyup', (e) => {
+      const key = e.keyCode || e.which;
+      if (key === 13 || key === 23 || key === 32) {
+        e.preventDefault();
+        cancelLongPress();
+        if (!isLongPress) {
+          handleTap(e);
+        }
+        isLongPress = false;
+      }
+    });
+
+    document.addEventListener('mousedown', (e) => {
+      console.log('[input] mousedown');
+      startLongPress();
+    });
+    document.addEventListener('mouseup', (e) => {
+      console.log('[input] mouseup, isLongPress:', isLongPress);
+      cancelLongPress();
+      if (!isLongPress) handleTap(e);
+      isLongPress = false;
+    });
+    document.addEventListener('touchstart', (e) => {
+      console.log('[input] touchstart');
+      startLongPress();
+    });
+    document.addEventListener('touchend', (e) => {
+      console.log('[input] touchend, isLongPress:', isLongPress);
+      cancelLongPress();
+      if (!isLongPress) handleTap(e);
+      isLongPress = false;
+    });
     document.addEventListener('dblclick', (e) => e.preventDefault());
 
     // ── Preload next artwork in background ──────────────────
@@ -318,7 +830,6 @@
           nextArtworkReady = artwork;
           return;
         } catch {
-          // Image failed to load, try another
           continue;
         }
       }
@@ -326,7 +837,6 @@
 
     async function skipToNext() {
       if (cycleTimer) { clearTimeout(cycleTimer); cycleTimer = null; }
-      // Use preloaded artwork if available, otherwise fetch fresh
       let artwork = nextArtworkReady;
       nextArtworkReady = null;
       if (artwork) {
@@ -338,7 +848,6 @@
           if (ok) break;
         }
       }
-      // Start preloading next immediately
       preloadNext();
       scheduleCycle();
     }
@@ -352,15 +861,12 @@
     }
 
     async function run() {
-      // Show first artwork
       while (true) {
         const artwork = await getNextArtwork();
         const ok = await showArtwork(artwork);
         if (ok) break;
       }
-      // Preload next immediately
       preloadNext();
-      // Start cycle
       scheduleCycle();
     }
 
@@ -379,7 +885,6 @@
         document.documentElement.requestFullscreen().catch(() => {});
       }
       requestWakeLock();
-      // Remove listener after first trigger
       document.removeEventListener('click', goFullscreen);
       document.removeEventListener('keydown', goFullscreen);
     }
